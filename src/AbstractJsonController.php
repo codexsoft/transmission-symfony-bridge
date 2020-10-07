@@ -240,31 +240,35 @@ abstract class AbstractJsonController implements JsonEndpointInterface
         }
 
         try {
-            $inputData = \json_decode($this->request->getContent(), true, 512, JSON_THROW_ON_ERROR);
+            $bodyInputData = \json_decode($this->request->getContent(), true, 512, JSON_THROW_ON_ERROR);
         } catch (\JsonException $e) {
             return $this->onJsonDecodeFailure($e);
         }
 
+        $pathInputData = $this->request->attributes->all();
+        $headersInputData = $this->request->headers->all();
+        $queryInputData = $this->request->query->all();
+
         try {
-            $bodyValidationResult = $bodySchema->getValidatedNormalizedData($inputData);
+            $bodyValidationResult = $bodySchema->getValidatedNormalizedData($bodyInputData);
         } catch (IncompatibleInputDataTypeException $e) {
             return $this->onNormalizationFail($e);
         }
 
         try {
-            $headersValidationResult = $headersSchema->getValidatedNormalizedData($inputData);
+            $headersValidationResult = $headersSchema->getValidatedNormalizedData($headersInputData);
         } catch (IncompatibleInputDataTypeException $e) {
             return $this->onNormalizationFail($e);
         }
 
         try {
-            $queryValidationResult = $headersSchema->getValidatedNormalizedData($inputData);
+            $queryValidationResult = $querySchema->getValidatedNormalizedData($queryInputData);
         } catch (IncompatibleInputDataTypeException $e) {
             return $this->onNormalizationFail($e);
         }
 
         try {
-            $pathValidationResult = $headersSchema->getValidatedNormalizedData($inputData);
+            $pathValidationResult = $pathSchema->getValidatedNormalizedData($pathInputData);
         } catch (IncompatibleInputDataTypeException $e) {
             return $this->onNormalizationFail($e);
         }
