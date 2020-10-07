@@ -4,11 +4,11 @@
 namespace CodexSoft\Transmission\SymfonyBridge;
 
 
-use CodexSoft\TransmissionSchema\Contracts\JsonEndpointInterface;
-use CodexSoft\TransmissionSchema\Elements\AbstractElement;
-use CodexSoft\TransmissionSchema\Elements\JsonElement;
-use CodexSoft\TransmissionSchema\Exceptions\IncompatibleInputDataTypeException;
-use CodexSoft\TransmissionSchema\Exceptions\InvalidJsonSchemaException;
+use CodexSoft\Transmission\Schema\Contracts\JsonEndpointInterface;
+use CodexSoft\Transmission\Schema\Elements\AbstractElement;
+use CodexSoft\Transmission\Schema\Elements\JsonElement;
+use CodexSoft\Transmission\Schema\Exceptions\IncompatibleInputDataTypeException;
+use CodexSoft\Transmission\Schema\Exceptions\InvalidJsonSchemaException;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestStack;
@@ -106,6 +106,13 @@ abstract class AbstractJsonController implements JsonEndpointInterface
         ], Response::HTTP_BAD_REQUEST);
     }
 
+    /**
+     * By default, empty body is allowed and empty input data will be handled.
+     * You can change this behaviour by overriding this method.
+     * @param mixed $requestBody
+     *
+     * @return Response
+     */
     protected function onEmptyBody($requestBody): Response
     {
         $this->beforeHandle();
