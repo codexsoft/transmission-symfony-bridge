@@ -1,7 +1,7 @@
 <?php
 
 
-namespace CodexSoft\TransmissionSymfonyBridge;
+namespace CodexSoft\Transmission\SymfonyBridge;
 
 
 use CodexSoft\TransmissionSchema\Contracts\JsonEndpointInterface;

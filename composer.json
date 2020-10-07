@@ -26,12 +26,12 @@
     },
     "autoload": {
         "psr-4": {
-            "CodexSoft\\TransmissionSymfonyBridge\\": ["src/"]
+            "CodexSoft\\Transmission\\SymfonyBridge\\": ["src/"]
         }
     },
     "autoload-dev": {
         "psr-4": {
-            "CodexSoft\\TransmissionSymfonyBridge\\": ["tests/unit/"],
+            "CodexSoft\\Transmission\\SymfonyBridge\\": ["tests/unit/"],
             "": ["vendor/"]
         }
     }
