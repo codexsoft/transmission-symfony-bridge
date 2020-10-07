@@ -221,13 +221,13 @@ abstract class AbstractJsonController implements JsonEndpointInterface
         }
 
         try {
-            $querySchema = (new JsonElement(static::headerParametersSchema()));
+            $querySchema = (new JsonElement(static::queryParametersSchema()));
         } catch (InvalidJsonSchemaException $e) {
             return $this->onInvalidQuerySchema($e);
         }
 
         try {
-            $pathSchema = (new JsonElement(static::headerParametersSchema()));
+            $pathSchema = (new JsonElement(static::pathParametersSchema()));
         } catch (InvalidJsonSchemaException $e) {
             return $this->onInvalidPathSchema($e);
         }
@@ -235,9 +235,9 @@ abstract class AbstractJsonController implements JsonEndpointInterface
         // todo: cookies?
 
         $requestBody = $this->request->getContent();
-        if (empty($requestBody)) {
-            return $this->onEmptyBody($requestBody);
-        }
+        //if (empty($requestBody)) {
+        //    return $this->onEmptyBody($requestBody);
+        //}
 
         try {
             $bodyInputData = \json_decode($this->request->getContent(), true, 512, JSON_THROW_ON_ERROR);
