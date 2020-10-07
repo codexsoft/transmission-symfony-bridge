@@ -1,0 +1,38 @@
+{
+    "name": "codexsoft/transmission-symfony-bridge",
+    "license": "MIT",
+    "description": "Connects Symfony Framework Bundle with CodexSoft Transmission",
+    "authors": [
+        {
+            "name": "Dmitriy V Kozubskiy",
+            "email": "kozubsky@inbox.ru",
+            "homepage": "http://codexsoft.ru/",
+            "role": "Maintainer"
+        }
+    ],
+    "support": {
+        "issues": "https://github.com/codexsoft/transmission-symfony-bridge/issues",
+        "source": "https://github.com/codexsoft/transmission-symfony-bridge"
+    },
+    "require": {
+        "php": "^7.4.0",
+        "ext-json": "*",
+        "symfony/http-foundation": "^4.3|^5.0",
+        "codexsoft/transmission-schema": "^0.0.2"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^9",
+        "roave/security-advisories": "dev-master"
+    },
+    "autoload": {
+        "psr-4": {
+            "CodexSoft\\TransmissionSymfonyBridge\\": ["src/"]
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "CodexSoft\\TransmissionSymfonyBridge\\": ["tests/unit/"],
+            "": ["vendor/"]
+        }
+    }
+}
