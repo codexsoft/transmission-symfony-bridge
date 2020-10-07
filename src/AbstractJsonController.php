@@ -118,7 +118,22 @@ abstract class AbstractJsonController implements JsonEndpointInterface
         return new JsonResponse([], Response::HTTP_INTERNAL_SERVER_ERROR);
     }
 
-    protected function onViolationsDetected(ConstraintViolationListInterface $violations): Response
+    protected function onInvalidHeadersSchema(InvalidJsonSchemaException $e): Response
+    {
+        return new JsonResponse([], Response::HTTP_INTERNAL_SERVER_ERROR);
+    }
+
+    protected function onInvalidQuerySchema(InvalidJsonSchemaException $e): Response
+    {
+        return new JsonResponse([], Response::HTTP_INTERNAL_SERVER_ERROR);
+    }
+
+    protected function onInvalidPathSchema(InvalidJsonSchemaException $e): Response
+    {
+        return new JsonResponse([], Response::HTTP_INTERNAL_SERVER_ERROR);
+    }
+
+    protected function prepareViolationsData(ConstraintViolationListInterface $violations): array
     {
         $violationsData = [];
 
@@ -127,9 +142,24 @@ abstract class AbstractJsonController implements JsonEndpointInterface
             $violationsData[] = $violation->getPropertyPath().': '.$violation->getInvalidValue().': '.$violation->getMessage();
         }
 
+        return $violationsData;
+    }
+
+    protected function onViolationsDetected(
+        ConstraintViolationListInterface $bodyViolations,
+        ConstraintViolationListInterface $queryViolations,
+        ConstraintViolationListInterface $pathViolations,
+        ConstraintViolationListInterface $headersViolations
+    ): Response
+    {
         return new JsonResponse([
-            'message' => 'Invalid request data: '.\implode(', ', $violationsData),
-            'data' => $violationsData,
+            'message' => 'Malformed request data',
+            'violations' => [
+                'body' => $this->prepareViolationsData($bodyViolations),
+                'query' => $this->prepareViolationsData($queryViolations),
+                'path' => $this->prepareViolationsData($pathViolations),
+                'headers' => $this->prepareViolationsData($headersViolations),
+            ],
         ], Response::HTTP_BAD_REQUEST);
     }
 
@@ -174,12 +204,36 @@ abstract class AbstractJsonController implements JsonEndpointInterface
     }
 
     /**
-     * @param mixed ...$pathVariables
-     *
      * @return Response
      */
-    public function __invoke(...$pathVariables): Response
+    public function __invoke(): Response
     {
+        try {
+            $bodySchema = (new JsonElement(static::bodyInputSchema()));
+        } catch (InvalidJsonSchemaException $e) {
+            return $this->onInvalidBodyInputSchema($e);
+        }
+
+        try {
+            $headersSchema = (new JsonElement(static::headerParametersSchema()));
+        } catch (InvalidJsonSchemaException $e) {
+            return $this->onInvalidHeadersSchema($e);
+        }
+
+        try {
+            $querySchema = (new JsonElement(static::headerParametersSchema()));
+        } catch (InvalidJsonSchemaException $e) {
+            return $this->onInvalidQuerySchema($e);
+        }
+
+        try {
+            $pathSchema = (new JsonElement(static::headerParametersSchema()));
+        } catch (InvalidJsonSchemaException $e) {
+            return $this->onInvalidPathSchema($e);
+        }
+
+        // todo: cookies?
+
         $requestBody = $this->request->getContent();
         if (empty($requestBody)) {
             return $this->onEmptyBody($requestBody);
@@ -192,23 +246,46 @@ abstract class AbstractJsonController implements JsonEndpointInterface
         }
 
         try {
-            $schema = (new JsonElement(static::bodyInputSchema()));
-        } catch (InvalidJsonSchemaException $e) {
-            return $this->onInvalidBodyInputSchema($e);
-        }
-
-        try {
-            $validationResult = $schema->getValidatedNormalizedData($inputData);
+            $bodyValidationResult = $bodySchema->getValidatedNormalizedData($inputData);
         } catch (IncompatibleInputDataTypeException $e) {
             return $this->onNormalizationFail($e);
         }
 
-        if ($validationResult->getViolations()->count()) {
-            return $this->onViolationsDetected($validationResult->getViolations());
+        try {
+            $headersValidationResult = $headersSchema->getValidatedNormalizedData($inputData);
+        } catch (IncompatibleInputDataTypeException $e) {
+            return $this->onNormalizationFail($e);
+        }
+
+        try {
+            $queryValidationResult = $headersSchema->getValidatedNormalizedData($inputData);
+        } catch (IncompatibleInputDataTypeException $e) {
+            return $this->onNormalizationFail($e);
+        }
+
+        try {
+            $pathValidationResult = $headersSchema->getValidatedNormalizedData($inputData);
+        } catch (IncompatibleInputDataTypeException $e) {
+            return $this->onNormalizationFail($e);
+        }
+
+        $violationsDetected =
+            $bodyValidationResult->getViolations()->count() ||
+            $headersValidationResult->getViolations()->count() ||
+            $queryValidationResult->getViolations()->count() ||
+            $pathValidationResult->getViolations()->count();
+
+        if ($violationsDetected) {
+            return $this->onViolationsDetected(
+                $bodyValidationResult->getViolations(),
+                $headersValidationResult->getViolations(),
+                $queryValidationResult->getViolations(),
+                $pathValidationResult->getViolations()
+            );
         }
 
         $this->beforeHandle();
-        $response = $this->handle($validationResult->getData(), $validationResult->getExtraData());
+        $response = $this->handle($bodyValidationResult->getData(), $bodyValidationResult->getExtraData());
         $modifiedResponse = $this->afterHandle($response);
         if ($modifiedResponse instanceof Response) {
             $response = $modifiedResponse;
