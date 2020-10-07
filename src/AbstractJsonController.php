@@ -18,10 +18,12 @@ use Symfony\Component\Validator\ConstraintViolationListInterface;
 
 /**
  * Base class for building HTTP JSON API
+ * Consumes JSON and produces JSON
  */
 abstract class AbstractJsonController implements JsonEndpointInterface
 {
     protected Request $request;
+    protected RequestStack $requestStack;
 
     public function __construct(RequestStack $requestStack)
     {
@@ -30,6 +32,7 @@ abstract class AbstractJsonController implements JsonEndpointInterface
             throw new \InvalidArgumentException('RequestStack is empty, failed to get current Request!');
         }
         $this->request = $request;
+        $this->requestStack = $requestStack;
         $this->init();
     }
 
@@ -38,6 +41,42 @@ abstract class AbstractJsonController implements JsonEndpointInterface
      * @return AbstractElement[]
      */
     abstract public static function bodyInputSchema(): array;
+
+    /**
+     * Expected request query parameters
+     * @return AbstractElement[]
+     */
+    public static function queryParametersSchema(): array
+    {
+        return [];
+    }
+
+    /**
+     * Expected request path parameters
+     * @return AbstractElement[]
+     */
+    public static function pathParametersSchema(): array
+    {
+        return [];
+    }
+
+    /**
+     * Expected request body parameters
+     * @return AbstractElement[]
+     */
+    public static function bodyParametersSchema(): array
+    {
+        return [];
+    }
+
+    /**
+     * Expected request body parameters
+     * @return AbstractElement[]
+     */
+    public static function headerParametersSchema(): array
+    {
+        return [];
+    }
 
     /**
      * Implement this method to handle input JSON data
@@ -57,8 +96,15 @@ abstract class AbstractJsonController implements JsonEndpointInterface
     {
     }
 
-    protected function afterHandle(Response $response): void
+    /**
+     * You can modify response, if needed
+     * @param Response $response
+     *
+     * @return Response|null
+     */
+    protected function afterHandle(Response $response): ?Response
     {
+        return null;
     }
 
     /**
@@ -115,17 +161,24 @@ abstract class AbstractJsonController implements JsonEndpointInterface
      */
     protected function onEmptyBody($requestBody): Response
     {
+        return $this->_handleRequest([]);
+    }
+
+    protected function _handleRequest(array $data, array $extraData = []): Response
+    {
         $this->beforeHandle();
-        $response = $this->handle([], []);
+        $response = $this->handle($data, $extraData);
         $this->afterHandle($response);
 
         return $response;
     }
 
     /**
+     * @param mixed ...$pathVariables
+     *
      * @return Response
      */
-    public function __invoke(): Response
+    public function __invoke(...$pathVariables): Response
     {
         $requestBody = $this->request->getContent();
         if (empty($requestBody)) {
@@ -156,7 +209,10 @@ abstract class AbstractJsonController implements JsonEndpointInterface
 
         $this->beforeHandle();
         $response = $this->handle($validationResult->getData(), $validationResult->getExtraData());
-        $this->afterHandle($response);
+        $modifiedResponse = $this->afterHandle($response);
+        if ($modifiedResponse instanceof Response) {
+            $response = $modifiedResponse;
+        }
 
         return $response;
     }
