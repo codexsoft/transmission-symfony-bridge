@@ -7,6 +7,7 @@ namespace CodexSoft\Transmission\SymfonyBridge;
 use CodexSoft\Transmission\Schema\Elements\AbstractElement;
 use CodexSoft\Transmission\Schema\Elements\JsonElement;
 use CodexSoft\Transmission\Schema\Elements\ScalarElement;
+use CodexSoft\Transmission\Schema\Exceptions\GenericTransmissionException;
 use CodexSoft\Transmission\Schema\Exceptions\InvalidJsonSchemaException;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -16,10 +17,10 @@ use Symfony\Component\Validator\ConstraintViolationInterface;
 use Symfony\Component\Validator\ConstraintViolationListInterface;
 
 /**
- * Base class for building HTTP JSON API
- * Consumes JSON and produces JSON
+ * Base class for building HTTP API
+ * todo: make version that extends Symfony Abstract Controller?
  */
-abstract class AbstractJsonController
+abstract class AbstractHttpController
 {
     protected Request $request;
     protected RequestStack $requestStack;
@@ -76,6 +77,9 @@ abstract class AbstractJsonController
 
     /**
      * Expected request body parameters (JSON for example)
+     *
+     * todo: consider improvement — allow return JsonElement object to allow denyExtraFields etc.
+     *
      * @return AbstractElement[]
      */
     public static function bodyParametersSchema(): array
@@ -226,6 +230,38 @@ abstract class AbstractJsonController
         return $request->request->all();
     }
 
+    protected static function contentTypeWhitelist(): array
+    {
+        return [];
+    }
+
+    protected static function contentTypeBlacklist(): array
+    {
+        return [];
+    }
+
+    /**
+     * @throws GenericTransmissionException
+     */
+    protected function ensureContentTypeAcceptable(): void
+    {
+        $contentType = $this->request->headers->get('CONTENT_TYPE');
+
+        $whiteList = static::contentTypeWhitelist();
+        if ($whiteList) {
+            if (\in_array($contentType, $whiteList, true)) {
+                return;
+            }
+
+            throw new GenericTransmissionException('Request content type '.$contentType.' is not acceptable (not in whitelist)');
+        }
+
+        $blackList = static::contentTypeBlacklist();
+        if ($blackList && \in_array($contentType, $blackList, true)) {
+            throw new GenericTransmissionException('Request content type '.$contentType.' is not acceptable (is in blacklist)');
+        }
+    }
+
     /**
      * @param array $parametersSchema
      *
@@ -243,11 +279,22 @@ abstract class AbstractJsonController
     /**
      * @return Response
      */
-    public function __invoke(): Response
+    protected function _handleRequest(): Response
     {
         try {
+            $this->ensureContentTypeAcceptable();
+        } catch (GenericTransmissionException $e) {
+            return new JsonResponse([
+                'message' => $e->getMessage(),
+            ], Response::HTTP_NOT_ACCEPTABLE);
+        }
+
+        /**
+         * todo: ->denyExtraFields() optionally?
+         * todo: inject files to body via Accept::file() element?
+         */
+        try {
             $bodySchema = (new JsonElement(static::bodyParametersSchema()));
-            // todo: ->denyExtraFields() optionally?
         } catch (InvalidJsonSchemaException $e) {
             return $this->onInvalidBodyInputSchema($e);
         }
@@ -306,6 +353,8 @@ abstract class AbstractJsonController
             $headersInputData[$headerName] = $this->request->headers->get($headerName);
         }
 
+        $files = $this->request->files->all();
+
         /**
          * Validating and normalizing request data according to parameter schemas
          */
@@ -360,5 +409,13 @@ abstract class AbstractJsonController
         }
 
         return $response;
+    }
+
+    /**
+     * @return Response
+     */
+    public function __invoke(): Response
+    {
+        return $this->_handleRequest();
     }
 }
