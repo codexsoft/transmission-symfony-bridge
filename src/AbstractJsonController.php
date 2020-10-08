@@ -4,10 +4,9 @@
 namespace CodexSoft\Transmission\SymfonyBridge;
 
 
-use CodexSoft\Transmission\Schema\Contracts\JsonEndpointInterface;
 use CodexSoft\Transmission\Schema\Elements\AbstractElement;
 use CodexSoft\Transmission\Schema\Elements\JsonElement;
-use CodexSoft\Transmission\Schema\Exceptions\IncompatibleInputDataTypeException;
+use CodexSoft\Transmission\Schema\Elements\ScalarElement;
 use CodexSoft\Transmission\Schema\Exceptions\InvalidJsonSchemaException;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -20,7 +19,7 @@ use Symfony\Component\Validator\ConstraintViolationListInterface;
  * Base class for building HTTP JSON API
  * Consumes JSON and produces JSON
  */
-abstract class AbstractJsonController implements JsonEndpointInterface
+abstract class AbstractJsonController
 {
     protected Request $request;
     protected RequestStack $requestStack;
@@ -37,10 +36,23 @@ abstract class AbstractJsonController implements JsonEndpointInterface
     }
 
     /**
-     * Expected request JSON schema
+     * Must be overriden in concrete controller class.
+     *
+     * @param RequestData $data normalized and validated data according to parameter schemas
+     * @param RequestData $extradata extra data that present in request but is not described
+     *
+     * @return Response
+     */
+    abstract protected function handle(RequestData $data, RequestData $extradata): Response;
+
+    /**
+     * Expected request cookie parameters
      * @return AbstractElement[]
      */
-    abstract public static function bodyInputSchema(): array;
+    public static function cookieParametersSchema(): array
+    {
+        return [];
+    }
 
     /**
      * Expected request query parameters
@@ -53,6 +65,8 @@ abstract class AbstractJsonController implements JsonEndpointInterface
 
     /**
      * Expected request path parameters
+     * Because path parameters are always strings, schema elements should not be strict for
+     * non-string types.
      * @return AbstractElement[]
      */
     public static function pathParametersSchema(): array
@@ -61,7 +75,7 @@ abstract class AbstractJsonController implements JsonEndpointInterface
     }
 
     /**
-     * Expected request body parameters
+     * Expected request body parameters (JSON for example)
      * @return AbstractElement[]
      */
     public static function bodyParametersSchema(): array
@@ -78,20 +92,13 @@ abstract class AbstractJsonController implements JsonEndpointInterface
         return [];
     }
 
-    /**
-     * Implement this method to handle input JSON data
-     *
-     * @param array $data
-     * @param array $extraData
-     *
-     * @return Response
-     */
-    abstract protected function handle(array $data, array $extraData = []): Response;
-
     protected function init(): void
     {
     }
 
+    /**
+     * Place for some actions that should be done before handling request
+     */
     protected function beforeHandle(): void
     {
     }
@@ -133,13 +140,27 @@ abstract class AbstractJsonController implements JsonEndpointInterface
         return new JsonResponse([], Response::HTTP_INTERNAL_SERVER_ERROR);
     }
 
+    protected function onInvalidCookiesSchema(InvalidJsonSchemaException $e): Response
+    {
+        return new JsonResponse([], Response::HTTP_INTERNAL_SERVER_ERROR);
+    }
+
+    /**
+     * Just a helper function for serializing detected violations data
+     * @param ConstraintViolationListInterface $violations
+     *
+     * @return array
+     */
     protected function prepareViolationsData(ConstraintViolationListInterface $violations): array
     {
         $violationsData = [];
 
         /** @var ConstraintViolationInterface $violation */
         foreach ($violations as $violation) {
-            $violationsData[] = $violation->getPropertyPath().': '.$violation->getInvalidValue().': '.$violation->getMessage();
+            $violationsData[$violation->getPropertyPath()] = [
+                'violation' => $violation->getMessage(),
+                'invalidValue' => $violation->getInvalidValue(),
+            ];
         }
 
         return $violationsData;
@@ -147,32 +168,22 @@ abstract class AbstractJsonController implements JsonEndpointInterface
 
     protected function onViolationsDetected(
         ConstraintViolationListInterface $bodyViolations,
+        ConstraintViolationListInterface $headersViolations,
         ConstraintViolationListInterface $queryViolations,
         ConstraintViolationListInterface $pathViolations,
-        ConstraintViolationListInterface $headersViolations
+        ConstraintViolationListInterface $cookiesViolations
     ): Response
     {
         return new JsonResponse([
             'message' => 'Malformed request data',
             'violations' => [
                 'body' => $this->prepareViolationsData($bodyViolations),
-                'query' => $this->prepareViolationsData($queryViolations),
-                'path' => $this->prepareViolationsData($pathViolations),
                 'headers' => $this->prepareViolationsData($headersViolations),
+                'path' => $this->prepareViolationsData($pathViolations),
+                'query' => $this->prepareViolationsData($queryViolations),
+                'cookies' => $this->prepareViolationsData($cookiesViolations),
             ],
         ], Response::HTTP_BAD_REQUEST);
-    }
-
-    /**
-     * todo: current implementation prevents to calculate violations by validator in case of normalization fails.
-     *
-     * @param IncompatibleInputDataTypeException $e
-     *
-     * @return Response
-     */
-    protected function onNormalizationFail(IncompatibleInputDataTypeException $e): Response
-    {
-        return new JsonResponse([], Response::HTTP_NOT_ACCEPTABLE);
     }
 
     protected function onJsonDecodeFailure(\JsonException $e): Response
@@ -183,24 +194,50 @@ abstract class AbstractJsonController implements JsonEndpointInterface
     }
 
     /**
-     * By default, empty body is allowed and empty input data will be handled.
-     * You can change this behaviour by overriding this method.
-     * @param mixed $requestBody
+     * 'html' => ['text/html', 'application/xhtml+xml'],
+     * 'txt' => ['text/plain'],
+     * 'js' => ['application/javascript', 'application/x-javascript', 'text/javascript'],
+     * 'css' => ['text/css'],
+     * 'json' => ['application/json', 'application/x-json'],
+     * 'jsonld' => ['application/ld+json'],
+     * 'xml' => ['text/xml', 'application/xml', 'application/x-xml'],
+     * 'rdf' => ['application/rdf+xml'],
+     * 'atom' => ['application/atom+xml'],
+     * 'rss' => ['application/rss+xml'],
+     * 'form' => ['application/x-www-form-urlencoded'],
      *
-     * @return Response
+     * @param Request $request
+     *
+     * @return array|mixed
+     * @throws \JsonException
      */
-    protected function onEmptyBody($requestBody): Response
+    protected function extractBody(Request $request)
     {
-        return $this->_handleRequest([]);
+        if ($request->getContentType() === 'json') {
+            $requestBody = $this->request->getContent();
+
+            if (empty($requestBody)) {
+                return [];
+            }
+
+            return \json_decode($this->request->getContent(), true, 512, JSON_THROW_ON_ERROR);
+        }
+
+        return $request->request->all();
     }
 
-    protected function _handleRequest(array $data, array $extraData = []): Response
+    /**
+     * @param array $parametersSchema
+     *
+     * @throws InvalidJsonSchemaException
+     */
+    protected function ensureAllElementsAreScalar(array $parametersSchema): void
     {
-        $this->beforeHandle();
-        $response = $this->handle($data, $extraData);
-        $this->afterHandle($response);
-
-        return $response;
+        foreach ($parametersSchema as $key => $value) {
+            if (!$value instanceof ScalarElement) {
+                throw new InvalidJsonSchemaException($key.' in path schema must be scalar type');
+            }
+        }
     }
 
     /**
@@ -209,87 +246,114 @@ abstract class AbstractJsonController implements JsonEndpointInterface
     public function __invoke(): Response
     {
         try {
-            $bodySchema = (new JsonElement(static::bodyInputSchema()));
+            $bodySchema = (new JsonElement(static::bodyParametersSchema()));
+            // todo: ->denyExtraFields() optionally?
         } catch (InvalidJsonSchemaException $e) {
             return $this->onInvalidBodyInputSchema($e);
         }
 
         try {
-            $headersSchema = (new JsonElement(static::headerParametersSchema()));
+            $headersParametersSchema = static::headerParametersSchema();
+            $this->ensureAllElementsAreScalar($headersParametersSchema);
+            $headersSchema = (new JsonElement($headersParametersSchema));
         } catch (InvalidJsonSchemaException $e) {
             return $this->onInvalidHeadersSchema($e);
         }
 
         try {
-            $querySchema = (new JsonElement(static::queryParametersSchema()));
+            $queryParametersSchema = static::queryParametersSchema();
+            $this->ensureAllElementsAreScalar($queryParametersSchema);
+            $querySchema = (new JsonElement($queryParametersSchema));
         } catch (InvalidJsonSchemaException $e) {
             return $this->onInvalidQuerySchema($e);
         }
 
         try {
-            $pathSchema = (new JsonElement(static::pathParametersSchema()));
+            $pathParametersSchema = static::pathParametersSchema();
+            $this->ensureAllElementsAreScalar($pathParametersSchema);
+            /* Prevent strict type checks for path variables */
+            foreach ($pathParametersSchema as $key => $value) {
+                $value->strict(false);
+            }
+            $pathSchema = new JsonElement($pathParametersSchema);
         } catch (InvalidJsonSchemaException $e) {
             return $this->onInvalidPathSchema($e);
         }
 
-        // todo: cookies?
+        try {
+            $cookiesParametersSchema = static::cookieParametersSchema();
+            $this->ensureAllElementsAreScalar($cookiesParametersSchema);
+            $cookiesSchema = (new JsonElement($cookiesParametersSchema));
+        } catch (InvalidJsonSchemaException $e) {
+            return $this->onInvalidCookiesSchema($e);
+        }
 
-        $requestBody = $this->request->getContent();
-        //if (empty($requestBody)) {
-        //    return $this->onEmptyBody($requestBody);
-        //}
+        /**
+         * Gathering request data
+         */
 
         try {
-            $bodyInputData = \json_decode($this->request->getContent(), true, 512, JSON_THROW_ON_ERROR);
+            $bodyInputData = $this->extractBody($this->request);
         } catch (\JsonException $e) {
             return $this->onJsonDecodeFailure($e);
         }
 
-        $pathInputData = $this->request->attributes->all();
-        $headersInputData = $this->request->headers->all();
+        $cookiesInputData = $this->request->cookies->all();
         $queryInputData = $this->request->query->all();
-
-        try {
-            $bodyValidationResult = $bodySchema->getValidatedNormalizedData($bodyInputData);
-        } catch (IncompatibleInputDataTypeException $e) {
-            return $this->onNormalizationFail($e);
+        $pathInputData = $this->request->attributes->get('_route_params');
+        $headersInputData = [];
+        foreach ($this->request->headers->keys() as $headerName) {
+            $headersInputData[$headerName] = $this->request->headers->get($headerName);
         }
 
-        try {
-            $headersValidationResult = $headersSchema->getValidatedNormalizedData($headersInputData);
-        } catch (IncompatibleInputDataTypeException $e) {
-            return $this->onNormalizationFail($e);
-        }
+        /**
+         * Validating and normalizing request data according to parameter schemas
+         */
 
-        try {
-            $queryValidationResult = $querySchema->getValidatedNormalizedData($queryInputData);
-        } catch (IncompatibleInputDataTypeException $e) {
-            return $this->onNormalizationFail($e);
-        }
-
-        try {
-            $pathValidationResult = $pathSchema->getValidatedNormalizedData($pathInputData);
-        } catch (IncompatibleInputDataTypeException $e) {
-            return $this->onNormalizationFail($e);
-        }
+        $bodyValidationResult = $bodySchema->getValidatedNormalizedData($bodyInputData);
+        $headersValidationResult = $headersSchema->getValidatedNormalizedData($headersInputData);
+        $queryValidationResult = $querySchema->getValidatedNormalizedData($queryInputData);
+        $pathValidationResult = $pathSchema->getValidatedNormalizedData($pathInputData);
+        $cookiesValidationResult = $cookiesSchema->getValidatedNormalizedData($cookiesInputData);
 
         $violationsDetected =
             $bodyValidationResult->getViolations()->count() ||
             $headersValidationResult->getViolations()->count() ||
             $queryValidationResult->getViolations()->count() ||
-            $pathValidationResult->getViolations()->count();
+            $pathValidationResult->getViolations()->count() ||
+            $cookiesValidationResult->getViolations()->count();
 
         if ($violationsDetected) {
             return $this->onViolationsDetected(
                 $bodyValidationResult->getViolations(),
                 $headersValidationResult->getViolations(),
                 $queryValidationResult->getViolations(),
-                $pathValidationResult->getViolations()
+                $pathValidationResult->getViolations(),
+                $cookiesValidationResult->getViolations()
             );
         }
 
+        /**
+         * Data prepared. Handling request.
+         */
+
+        $requestData = new RequestData();
+        $requestData->body = $bodyValidationResult->getData();
+        $requestData->headers = $headersValidationResult->getData();
+        $requestData->query = $queryValidationResult->getData();
+        $requestData->path = $pathValidationResult->getData();
+        $requestData->cookies = $cookiesValidationResult->getData();
+
+        $extraData = new RequestData();
+        $extraData->body = $bodyValidationResult->getExtraData();
+        $extraData->headers = $headersValidationResult->getExtraData();
+        $extraData->query = $queryValidationResult->getExtraData();
+        $extraData->path = $pathValidationResult->getExtraData();
+        $extraData->cookies = $cookiesValidationResult->getExtraData();
+
         $this->beforeHandle();
-        $response = $this->handle($bodyValidationResult->getData(), $bodyValidationResult->getExtraData());
+        $response = $this->handle($requestData, $extraData);
+
         $modifiedResponse = $this->afterHandle($response);
         if ($modifiedResponse instanceof Response) {
             $response = $modifiedResponse;
