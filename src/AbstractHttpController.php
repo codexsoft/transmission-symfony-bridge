@@ -9,6 +9,7 @@ use CodexSoft\Transmission\Schema\Elements\JsonElement;
 use CodexSoft\Transmission\Schema\Elements\ScalarElement;
 use CodexSoft\Transmission\Schema\Exceptions\GenericTransmissionException;
 use CodexSoft\Transmission\Schema\Exceptions\InvalidJsonSchemaException;
+use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestStack;
@@ -20,7 +21,7 @@ use Symfony\Component\Validator\ConstraintViolationListInterface;
  * Base class for building HTTP API
  * todo: make version that extends Symfony Abstract Controller?
  */
-abstract class AbstractHttpController
+abstract class AbstractHttpController extends AbstractController implements RequestSchemaInterface
 {
     protected Request $request;
     protected RequestStack $requestStack;
@@ -359,11 +360,11 @@ abstract class AbstractHttpController
          * Validating and normalizing request data according to parameter schemas
          */
 
-        $bodyValidationResult = $bodySchema->getValidatedNormalizedData($bodyInputData);
-        $headersValidationResult = $headersSchema->getValidatedNormalizedData($headersInputData);
-        $queryValidationResult = $querySchema->getValidatedNormalizedData($queryInputData);
-        $pathValidationResult = $pathSchema->getValidatedNormalizedData($pathInputData);
-        $cookiesValidationResult = $cookiesSchema->getValidatedNormalizedData($cookiesInputData);
+        $bodyValidationResult = $bodySchema->validateNormalizedData($bodyInputData);
+        $headersValidationResult = $headersSchema->validateNormalizedData($headersInputData);
+        $queryValidationResult = $querySchema->validateNormalizedData($queryInputData);
+        $pathValidationResult = $pathSchema->validateNormalizedData($pathInputData);
+        $cookiesValidationResult = $cookiesSchema->validateNormalizedData($cookiesInputData);
 
         $violationsDetected =
             $bodyValidationResult->getViolations()->count() ||
