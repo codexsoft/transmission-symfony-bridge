@@ -302,8 +302,12 @@ abstract class AbstractHttpController extends AbstractController implements Requ
 
         try {
             $headersParametersSchema = static::headerParametersSchema();
-            $this->ensureAllElementsAreScalar($headersParametersSchema);
-            $headersSchema = (new JsonElement($headersParametersSchema));
+            $lowercaseHeadersParametersSchema = [];
+            foreach ($headersParametersSchema as $key => $headersParametersSchemaItem) {
+                $lowercaseHeadersParametersSchema[\mb_strtolower($key)] = $headersParametersSchemaItem;
+            }
+            $this->ensureAllElementsAreScalar($lowercaseHeadersParametersSchema);
+            $headersSchema = (new JsonElement($lowercaseHeadersParametersSchema));
         } catch (InvalidJsonSchemaException $e) {
             return $this->onInvalidHeadersSchema($e);
         }
