@@ -250,8 +250,18 @@ abstract class AbstractHttpController extends AbstractController implements Requ
 
         $whiteList = static::contentTypeWhitelist();
         if ($whiteList) {
-            if (\in_array($contentType, $whiteList, true)) {
-                return;
+            foreach ($whiteList as $whiteListItem) {
+                /*
+                 * Sometimes Content-Type is not just 'application/json'
+                 * Content-Type: text/html; charset=UTF-8
+                 * Content-Type: multipart/form-data; boundary=something
+                 */
+                if (\str_ends_with($whiteListItem, '*')) {
+                    $whiteListItem = \rtrim($whiteListItem, '*');
+                }
+                if (\str_starts_with($contentType, $whiteListItem)) {
+                    return;
+                }
             }
 
             throw new GenericTransmissionException('Request content type '.$contentType.' is not acceptable (not in whitelist)');
