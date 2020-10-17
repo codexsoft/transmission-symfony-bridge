@@ -352,7 +352,22 @@ abstract class AbstractHttpController extends AbstractController implements Requ
 
         $cookiesInputData = $this->request->cookies->all();
         $queryInputData = $this->request->query->all();
-        $pathInputData = $this->request->attributes->get('_route_params');
+
+        if ($this->request->attributes->has('_route_params')) {
+            $pathInputData = $this->request->attributes->get('_route_params');
+        } else {
+            /*
+             * In forwarded requests path variables are not in _route_params, but simply in attributes
+             */
+            $pathInputData = [];
+            foreach ($this->request->attributes->all() as $parameter => $value) {
+                if (\str_starts_with($parameter, '_')) {
+                    continue;
+                }
+                $pathInputData[$parameter] = $value;
+            }
+        }
+
         $headersInputData = [];
         foreach ($this->request->headers->keys() as $headerName) {
             $headersInputData[$headerName] = $this->request->headers->get($headerName);
