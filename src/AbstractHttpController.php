@@ -5,6 +5,7 @@ namespace CodexSoft\Transmission\SymfonyBridge;
 
 
 use CodexSoft\Transmission\Schema\Elements\AbstractElement;
+use CodexSoft\Transmission\Schema\Elements\CollectionElement;
 use CodexSoft\Transmission\Schema\Elements\JsonElement;
 use CodexSoft\Transmission\Schema\Elements\ScalarElement;
 use CodexSoft\Transmission\Schema\Exceptions\GenericTransmissionException;
@@ -127,27 +128,37 @@ abstract class AbstractHttpController extends AbstractController implements Requ
      */
     protected function onInvalidBodyInputSchema(InvalidJsonSchemaException $e): Response
     {
-        return new JsonResponse([], Response::HTTP_INTERNAL_SERVER_ERROR);
+        return new JsonResponse([
+            'message' => 'body schema is invalid',
+        ], Response::HTTP_INTERNAL_SERVER_ERROR);
     }
 
     protected function onInvalidHeadersSchema(InvalidJsonSchemaException $e): Response
     {
-        return new JsonResponse([], Response::HTTP_INTERNAL_SERVER_ERROR);
+        return new JsonResponse([
+            'message' => 'headers schema is invalid',
+        ], Response::HTTP_INTERNAL_SERVER_ERROR);
     }
 
     protected function onInvalidQuerySchema(InvalidJsonSchemaException $e): Response
     {
-        return new JsonResponse([], Response::HTTP_INTERNAL_SERVER_ERROR);
+        return new JsonResponse([
+            'message' => 'query schema is invalid',
+        ], Response::HTTP_INTERNAL_SERVER_ERROR);
     }
 
     protected function onInvalidPathSchema(InvalidJsonSchemaException $e): Response
     {
-        return new JsonResponse([], Response::HTTP_INTERNAL_SERVER_ERROR);
+        return new JsonResponse([
+            'message' => 'path schema is invalid',
+        ], Response::HTTP_INTERNAL_SERVER_ERROR);
     }
 
     protected function onInvalidCookiesSchema(InvalidJsonSchemaException $e): Response
     {
-        return new JsonResponse([], Response::HTTP_INTERNAL_SERVER_ERROR);
+        return new JsonResponse([
+            'message' => 'cookies schema is invalid',
+        ], Response::HTTP_INTERNAL_SERVER_ERROR);
     }
 
     /**
@@ -324,7 +335,16 @@ abstract class AbstractHttpController extends AbstractController implements Requ
 
         try {
             $queryParametersSchema = static::queryParametersSchema();
-            $this->ensureAllElementsAreScalar($queryParametersSchema);
+
+            /*
+             * Query parameters can be arrays, not only scalars
+             */
+            foreach ($queryParametersSchema as $key => $value) {
+                if (!$value instanceof ScalarElement && !$value instanceof CollectionElement) {
+                    throw new InvalidJsonSchemaException($key.' in path schema must be scalar or array type');
+                }
+            }
+
             $querySchema = (new JsonElement($queryParametersSchema));
         } catch (InvalidJsonSchemaException $e) {
             return $this->onInvalidQuerySchema($e);
