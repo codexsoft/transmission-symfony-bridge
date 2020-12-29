@@ -15,7 +15,7 @@
         "source": "https://github.com/codexsoft/transmission-symfony-bridge"
     },
     "require": {
-        "php": "^7.4.0",
+        "php": "^7.4|^8",
         "ext-json": "*",
         "symfony/http-foundation": "^4.3|^5.0",
         "codexsoft/transmission-schema": "^1"
